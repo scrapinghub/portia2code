@@ -1,0 +1,236 @@
+#!/usr/bin/env python
+
+import contextlib
+import logging
+import os
+
+import portia2code.parser
+import portia2code.processors
+import portia2code.spiders
+
+from inspect import getsource
+from itertools import chain
+
+from slybot.spider import IblSpider
+from slybot.starturls import generator
+from portia2code.samples import ItemBuilder
+from portia2code.templates import (
+    ITEM_CLASS, ITEM_FIELD, ITEMS_IMPORTS, RULES, SPIDER_CLASS, SPIDER_FILE
+)
+from portia2code.utils import (PROCESSOR_TYPES, _validate_identifier, _clean,
+                               class_name, item_field_name)
+
+
+def create_schemas_classes(items):
+    """Create schemas and fields from definitions."""
+    item_classes, item_names = [], {}
+    for item_id, item in items.items():
+        item_name = class_name(item.get('name', item_id))
+        if not _validate_identifier(item_name):
+            logging.warning(
+                'Skipping item with id "%s", name "%s" is not a valid '
+                'identifier' % (item_id, item_name))
+            continue
+        item_fields = ''.join(create_fields(item['fields']))
+        if not item_fields:
+            item_fields = 'pass\n'.rjust(9)
+        item_classes.append(
+            ITEM_CLASS(name=item_name, fields=item_fields))
+        item_names[item_id] = item_name
+    return item_classes, item_names
+
+
+def create_fields(item_fields):
+    """"Create fields from definitions."""
+    fields = []
+    for field_id, field in item_fields.items():
+        name = item_field_name(field.get('name', field_id))
+        if not _validate_identifier(name):
+            logging.warning(
+                'Skipping field with id "%s", name "%s" is not a valid '
+                'identifier' % (field_id, name))
+            continue
+        field_type = field.get('type', 'text')
+        input_processor = repr(PROCESSOR_TYPES.get(field_type, 'lambda x: x'))
+        output_processor = 'Join()'
+        fields.append(ITEM_FIELD(name=name, input=input_processor,
+                                 output=output_processor))
+    return fields
+
+
+def write_library_files():
+    """Write utilities needed to run spiders."""
+    try:
+        os.mkdir('utils')
+    except OSError:
+        pass
+    for fname, fdata in (('__init__', ''),
+                         ('parser', getsource(portia2code.parser)),
+                         ('processors', getsource(portia2code.processors)),
+                         ('spiders', getsource(portia2code.spiders)),
+                         ('starturls', getsource(generator))):
+        with open('./utils/%s.py' % fname, 'w') as f:
+            f.write(fdata)
+
+
+def create_schemas(items):
+    """Create and write schemas from definitions."""
+    filename = 'items.py'
+    with open(filename, 'w') as f:
+        schema_classes, schema_names = create_schemas_classes(items)
+        items_py = '\n'.join(chain([ITEMS_IMPORTS], schema_classes)).strip()
+        f.write(items_py)
+    return schema_names
+
+
+def create_spider(name, spider, spec, samples, schemas, extractors, items):
+    cls_name = class_name(name)
+    urls_type = getattr(spider, 'start_urls_type', 'start_urls')
+    start_urls = []
+    if urls_type == 'start_urls':
+        urls = getattr(spider, 'start_urls', []) or spec.get('start_urls', [])
+        if urls:
+            start_urls = repr(urls)
+    elif urls_type == 'generated_urls':
+        urls_spec = (getattr(spider, 'generated_urls', []) or
+                     spec.get('generated_urls', []))
+        if urls_spec:
+            start_urls = 'generator(%r)' % urls_spec
+
+    allowed = spider.allowed_domains
+    crawling_options = spec.get('links_to_follow')
+    allow, deny = '', ''
+    if crawling_options == 'patterns':
+        if spec.get('follow_patterns'):
+            allow = ', '.join((repr(s) for s in spec['follow_patterns']))
+        if spec.get('exclude_patterns'):
+            deny = ','.join((repr(s) for s in spec['exclude_patterns']))
+    elif crawling_options == 'none':
+        deny = "'.*'"
+    else:
+        allow = "'.*'"
+    # TODO: Add support for auto
+    rules = RULES(allow=allow, deny=deny)
+    item_imports = ItemBuilder(
+        schemas, extractors, items, items['_PortiaItem']).extract(
+        spider.plugins[0].extractors
+    )
+    return SPIDER_CLASS(
+        class_name=cls_name, name=name, allowed_domains=repr(allowed),
+        start_urls=start_urls, rules=rules, items=item_imports
+    )
+
+
+def create_spiders(spiders, schemas, extractors, items):
+    item_classes = ''
+    if items:
+        item_classes = '\nfrom ..items import {}'.format(
+            ', '.join((v().__class__.__name__ for v in items.values()))
+        )
+    for name, (spider, spec) in spiders.items():
+        logging.info('Creating spider "%s"' % spider.name)
+        spider = create_spider(name, spider, spec, spec['templates'],
+                               schemas, extractors, items)
+        cleaned_name = _clean(name)
+        filename = 'spiders/{}.py'.format(cleaned_name)
+        with open(filename, 'w') as f:
+            f.writelines((SPIDER_FILE(item_classes=item_classes),
+                          spider.strip()))
+
+
+@contextlib.contextmanager
+def working_directory(path):
+    """A context manager which changes the working directory to the given
+    path, and then changes it back to its previous value on exit.
+    """
+    prev_cwd = os.getcwd()
+    os.chdir(path)
+    try:
+        yield
+    finally:
+        os.chdir(prev_cwd)
+
+
+if __name__ == '__main__':
+    logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s',
+                        datefmt='%Y-%m-%d %H:%M:%S',
+                        level=logging.DEBUG)
+    import json
+    import sys
+    import subprocess
+
+    from importlib import import_module
+
+    from scrapy.settings import Settings
+    from slybot.utils import _build_sample
+    project_dir = sys.argv[1]
+    try:
+        out_dir = sys.argv[2]
+    except IndexError:
+        out_dir = './'
+    out_dir = os.path.abspath(out_dir)
+    dir_name = os.path.split(out_dir)[-1]
+
+    # Load items and extractors from project
+    with open(os.path.join(project_dir, 'items.json')) as f:
+        schemas = json.load(f)
+    with open(os.path.join(project_dir, 'extractors.json')) as f:
+        extractors = json.load(f)
+
+    # Load spiders and templates
+    spiders = {}
+    spider_dir = os.path.join(project_dir, 'spiders')
+    spiders_list = [s for s in os.listdir(spider_dir) if s.endswith('.json')]
+    for spider_file in spiders_list:
+        spider_name = spider_file[:-5]
+        with open(os.path.join(spider_dir, spider_file))as f:
+            spider = json.load(f)
+        if not spider:
+            logging.warning(
+                'Skipping "{}" spider as there is no data'.format(spider_name)
+            )
+            continue
+        if 'template_names' in spider:
+            samples = spider.get('template_names', [])
+            spider['templates'] = []
+            for sample_name in samples:
+                sample_file = '%s.json' % sample_name
+                sample_path = os.path.join(spider_dir, spider_name,
+                                           sample_file)
+                with open(sample_path) as f:
+                    sample = json.load(f)
+                    _build_sample(sample)
+                    spider['templates'].append(sample)
+        else:
+            for sample in spider.get('templates', []):
+                _build_sample(sample)
+        spiders[spider_name] = (IblSpider(spider_name, spider, schemas,
+                                          extractors, Settings()),
+                                spider)
+
+    # Create project layout and default files
+    subprocess.call('scrapy startproject {}'.format(dir_name).split())
+    os.chdir(os.path.join(out_dir, dir_name))
+    schema_names = create_schemas(schemas)
+    write_library_files()
+
+    # XXX: Hack to load items.py file
+    with working_directory('..'), open('./__init__.py', 'w') as f:
+        f.write('')
+        items = vars(import_module('%s.%s.%s' % (dir_name, dir_name, 'items')))
+        os.remove('./__init__.py')
+
+    # Load schema objects from module
+    schema_names = {_id: items['%sItem' % name]
+                    for _id, name in schema_names.items()}
+    schema_names['_PortiaItem'] = items['PortiaItem']
+
+    create_spiders(spiders, schemas, extractors, schema_names)
+
+    # Remove unused imports and reindent to make code more visually appealing
+    subprocess.call(
+        'autoflake --remove-all-unused-imports '
+        '-ir {}'.format(os.getcwd()).split()
+    )
+    subprocess.call('autopep8 -aira {}'.format(os.getcwd()).split())
+    # TODO: remove all pyc files
