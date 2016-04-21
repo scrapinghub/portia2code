@@ -1,16 +1,26 @@
 #!/usr/bin/env python
 
-import contextlib
+import imp
 import logging
 import os
+import string
+import zipfile
 
 import portia2code.parser
 import portia2code.processors
 import portia2code.spiders
 
+from datetime import datetime
 from inspect import getsource
 from itertools import chain
+from os.path import join
 
+from six import StringIO
+
+from autoflake import fix_code
+from autopep8 import fix_lines
+from scrapy.commands.startproject import TEMPLATES_PATH
+from scrapy.utils.template import string_camelcase
 from slybot.spider import IblSpider
 from slybot.starturls import generator
 from portia2code.samples import ItemBuilder
@@ -19,6 +29,78 @@ from portia2code.templates import (
 )
 from portia2code.utils import (PROCESSOR_TYPES, _validate_identifier, _clean,
                                class_name, item_field_name)
+log = logging.getLogger(__name__)
+
+
+class Options(object):
+    """Settings for autopep8."""
+
+    version = '1.0.0'
+    verbose = None
+    diff = False
+    in_place = False
+    global_config = False
+    ignore_local_config = False
+    recursive = False
+    jobs = 1
+    pep8_passes = -1
+    aggressive = 3
+    experimental = False
+    exclude = ''
+    list_fixes = False
+    ignore = ''
+    select = ''
+    max_line_length = 79
+    line_range = None
+    indent_size = 4
+    files = []
+
+
+def write_to_archive(archive, project_name, files):
+    """Write files to the project_name folder of the archive."""
+    tstamp = datetime.now().timetuple()[:6]
+    for filepath, contents in files:
+        if not contents:
+            continue
+        if filepath is None or contents in (None, 'null'):
+            log.debug('Skipping file "%s" with contents "%r"' % (filepath,
+                                                                 contents))
+            continue
+        filepath = join(project_name, filepath)
+        fileinfo = zipfile.ZipInfo(filepath, tstamp)
+        fileinfo.external_attr = 0o666 << 16
+        archive.writestr(fileinfo, contents, zipfile.ZIP_DEFLATED)
+
+
+def find_files(project_name):
+    sep = os.sep
+    read_files = {}
+    for base, dirs, files in os.walk(join(TEMPLATES_PATH)):
+        basepath = base[len(TEMPLATES_PATH):]
+        if basepath.lstrip('/\\').startswith('module'):
+            basepath = join(project_name, sep.join(basepath.split(sep)[2:]))
+        for filename in files:
+            if filename.endswith(('.pyc', '.pyo')):
+                continue
+            path = join(base, filename)
+            with open(path) as f:
+                out_path = join(basepath, filename)
+                read_files[out_path] = f.read()
+    return read_files
+
+
+def start_scrapy_project(project_name):
+    files = find_files(project_name)
+    out_files = {}
+    for path, contents in files.items():
+        contents = string.Template(contents).substitute(
+            project_name=project_name,
+            ProjectName=string_camelcase(project_name)
+        )
+        if path.endswith('.tmpl'):
+            path = path[:-len('.tmpl')]
+        out_files[path] = contents
+    return out_files
 
 
 def create_schemas_classes(items):
@@ -27,7 +109,7 @@ def create_schemas_classes(items):
     for item_id, item in items.items():
         item_name = class_name(item.get('name', item_id))
         if not _validate_identifier(item_name):
-            logging.warning(
+            log.warning(
                 'Skipping item with id "%s", name "%s" is not a valid '
                 'identifier' % (item_id, item_name))
             continue
@@ -46,7 +128,7 @@ def create_fields(item_fields):
     for field_id, field in item_fields.items():
         name = item_field_name(field.get('name', field_id))
         if not _validate_identifier(name):
-            logging.warning(
+            log.warning(
                 'Skipping field with id "%s", name "%s" is not a valid '
                 'identifier' % (field_id, name))
             continue
@@ -58,29 +140,24 @@ def create_fields(item_fields):
     return fields
 
 
-def write_library_files():
+def create_library_files():
     """Write utilities needed to run spiders."""
-    try:
-        os.mkdir('utils')
-    except OSError:
-        pass
-    for fname, fdata in (('__init__', ''),
-                         ('parser', getsource(portia2code.parser)),
-                         ('processors', getsource(portia2code.processors)),
-                         ('spiders', getsource(portia2code.spiders)),
-                         ('starturls', getsource(generator))):
-        with open('./utils/%s.py' % fname, 'w') as f:
-            f.write(fdata)
+    return [
+        ('utils/__init__.py', ''),
+        ('utils/parser.py', getsource(portia2code.parser)),
+        ('utils/processors.py', getsource(portia2code.processors)),
+        ('utils/spiders.py', getsource(portia2code.spiders)),
+        ('utils/starturls.py', getsource(generator))
+    ]
 
 
 def create_schemas(items):
     """Create and write schemas from definitions."""
-    filename = 'items.py'
-    with open(filename, 'w') as f:
-        schema_classes, schema_names = create_schemas_classes(items)
-        items_py = '\n'.join(chain([ITEMS_IMPORTS], schema_classes)).strip()
-        f.write(items_py)
-    return schema_names
+    schema_classes, schema_names = create_schemas_classes(items)
+    items_py = '\n'.join(chain([ITEMS_IMPORTS], schema_classes)).strip()
+    items_py = fix_lines(fix_code(items_py.decode('utf-8')).splitlines(),
+                         Options)
+    return items_py, schema_names
 
 
 def create_spider(name, spider, spec, samples, schemas, extractors, items):
@@ -127,66 +204,91 @@ def create_spiders(spiders, schemas, extractors, items):
         item_classes = '\nfrom ..items import {}'.format(
             ', '.join((v().__class__.__name__ for v in items.values()))
         )
+    spider_data = []
     for name, (spider, spec) in spiders.items():
-        logging.info('Creating spider "%s"' % spider.name)
+        log.info('Creating spider "%s"' % spider.name)
         spider = create_spider(name, spider, spec, spec['templates'],
                                schemas, extractors, items)
         cleaned_name = _clean(name)
         filename = 'spiders/{}.py'.format(cleaned_name)
-        with open(filename, 'w') as f:
-            f.writelines((SPIDER_FILE(item_classes=item_classes),
+        data = '\n'.join((SPIDER_FILE(item_classes=item_classes),
                           spider.strip()))
+        code = fix_lines(fix_code(data.decode('utf-8')).splitlines(), Options)
+        spider_data.append((filename, code))
+    return spider_data
 
 
-@contextlib.contextmanager
-def working_directory(path):
-    """A context manager which changes the working directory to the given
-    path, and then changes it back to its previous value on exit.
-    """
-    prev_cwd = os.getcwd()
-    os.chdir(path)
-    try:
-        yield
-    finally:
-        os.chdir(prev_cwd)
+def port_project(dir_name, schemas, spiders, extractors):
+    # Create project layout and default files
+    zbuff = StringIO()
+    archive = zipfile.ZipFile(zbuff, "w", zipfile.ZIP_DEFLATED)
+    write_to_archive(archive, '', start_scrapy_project(dir_name).items())
+    items_py, schema_names = create_schemas(schemas)
+    write_to_archive(archive, dir_name, [('items.py', items_py)])
+    write_to_archive(archive, dir_name, create_library_files())
+
+    # XXX: Hack to load items.py file
+    items_no_relative = items_py.replace(
+        'from .utils.processors import', 'from portia2code.processors import'
+    )
+    mod = imp.new_module('%s.%s' % (dir_name, 'items'))
+    exec(items_no_relative, mod.__dict__)
+    items = vars(mod)
+
+    # Load schema objects from module
+    schema_names = {}
+    for _id, name in schema_names.items():
+        schema_names[_id] = items['%sItem' % name]
+    schema_names['_PortiaItem'] = items['PortiaItem']
+
+    spider_data = create_spiders(spiders, schemas, extractors, schema_names)
+    write_to_archive(archive, dir_name, spider_data)
+    archive.close()
+    zbuff.seek(0)
+    return zbuff
 
 
 if __name__ == '__main__':
     logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s',
                         datefmt='%Y-%m-%d %H:%M:%S',
-                        level=logging.DEBUG)
+                        level=logging.INFO)
     import json
     import sys
-    import subprocess
-
-    from importlib import import_module
 
     from scrapy.settings import Settings
     from slybot.utils import _build_sample
     project_dir = sys.argv[1]
     try:
-        out_dir = sys.argv[2]
+        out_dir = os.path.abspath(sys.argv[2])
+        dir_name = os.path.split(out_dir)[-1]
     except IndexError:
-        out_dir = './'
-    out_dir = os.path.abspath(out_dir)
-    dir_name = os.path.split(out_dir)[-1]
+        out_dir = os.path.abspath('./')
+        dir_name = os.path.split(os.path.abspath(project_dir))[-1]
+    if dir_name.endswith('.zip'):
+        out_dir = os.path.dirname(dir_name)
+        dir_name = dir_name[:-len('.zip')]
+    if not _validate_identifier(dir_name):
+        raise ValueError('Output project name "%s" is not a valid name. Valid '
+                         'names should only contain number letters and '
+                         'underscores and may not start with a number' %
+                         dir_name)
 
     # Load items and extractors from project
-    with open(os.path.join(project_dir, 'items.json')) as f:
+    with open(join(project_dir, 'items.json')) as f:
         schemas = json.load(f)
-    with open(os.path.join(project_dir, 'extractors.json')) as f:
+    with open(join(project_dir, 'extractors.json')) as f:
         extractors = json.load(f)
 
     # Load spiders and templates
     spiders = {}
-    spider_dir = os.path.join(project_dir, 'spiders')
+    spider_dir = join(project_dir, 'spiders')
     spiders_list = [s for s in os.listdir(spider_dir) if s.endswith('.json')]
     for spider_file in spiders_list:
         spider_name = spider_file[:-5]
-        with open(os.path.join(spider_dir, spider_file))as f:
+        with open(join(spider_dir, spider_file))as f:
             spider = json.load(f)
         if not spider:
-            logging.warning(
+            log.warning(
                 'Skipping "{}" spider as there is no data'.format(spider_name)
             )
             continue
@@ -195,8 +297,7 @@ if __name__ == '__main__':
             spider['templates'] = []
             for sample_name in samples:
                 sample_file = '%s.json' % sample_name
-                sample_path = os.path.join(spider_dir, spider_name,
-                                           sample_file)
+                sample_path = join(spider_dir, spider_name, sample_file)
                 with open(sample_path) as f:
                     sample = json.load(f)
                     _build_sample(sample)
@@ -208,29 +309,9 @@ if __name__ == '__main__':
                                           extractors, Settings()),
                                 spider)
 
-    # Create project layout and default files
-    subprocess.call('scrapy startproject {}'.format(dir_name).split())
-    os.chdir(os.path.join(out_dir, dir_name))
-    schema_names = create_schemas(schemas)
-    write_library_files()
-
-    # XXX: Hack to load items.py file
-    with working_directory('..'), open('./__init__.py', 'w') as f:
-        f.write('')
-        items = vars(import_module('%s.%s.%s' % (dir_name, dir_name, 'items')))
-        os.remove('./__init__.py')
-
-    # Load schema objects from module
-    schema_names = {_id: items['%sItem' % name]
-                    for _id, name in schema_names.items()}
-    schema_names['_PortiaItem'] = items['PortiaItem']
-
-    create_spiders(spiders, schemas, extractors, schema_names)
-
-    # Remove unused imports and reindent to make code more visually appealing
-    subprocess.call(
-        'autoflake --remove-all-unused-imports '
-        '-ir {}'.format(os.getcwd()).split()
-    )
-    subprocess.call('autopep8 -aira {}'.format(os.getcwd()).split())
-    # TODO: remove all pyc files
+    # Write contents to file
+    out_path = os.path.join(out_dir, '%s.zip' % dir_name)
+    log.info('Writing project to "%s"' % out_path)
+    with open(out_path, 'wb') as f:
+        f.write(port_project(dir_name, schemas, spiders, extractors).read())
+    log.info('Finished.')
