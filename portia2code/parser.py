@@ -10,15 +10,15 @@ ALLOWED_TAGS = frozenset({
     'listing', 'ol', 'p', 'plaintext', 'pre', 'q', 'samp', 'small', 'strong',
     'sub', 'sup', 'table', 'tbody', 'td', 'th', 'time', 'tr', 'tt', 'ul', 'var'
 })
-REPLACE_TAGS =  {
-  'b': 'strong',
-  'h1': 'strong',
-  'h2': 'strong',
-  'h3': 'strong',
-  'h4': 'strong',
-  'h5': 'strong',
-  'h6': 'strong',
-  'i': 'em'
+REPLACE_TAGS = {
+    'b': 'strong',
+    'h1': 'strong',
+    'h2': 'strong',
+    'h3': 'strong',
+    'h4': 'strong',
+    'h5': 'strong',
+    'h6': 'strong',
+    'i': 'em'
 }
 PURGE_TAGS = ('script', 'img', 'input', 'style')
 ALLOWED_ATTRS = frozenset({
@@ -26,7 +26,7 @@ ALLOWED_ATTRS = frozenset({
     'bgcolor', 'alt', 'align', 'valign', 'dir', 'headers', 'reversed',
     'rows', 'rowspan', 'scope', 'span', 'start', 'summary', 'title', 'value'
 })
-class AllowAllTags(object):
+class AllowAll(object):
     def __contains__(self, value):
         return True
 
@@ -79,6 +79,7 @@ class SafeHtmlParser(HTMLParser):
         self.reset()
         self._body = []
         self.skip = False
+        self._unclosed = deque()
         if allowed_tags is None:
             allowed_tags = AllowAll()
         if allowed_attrs is None:
@@ -87,6 +88,7 @@ class SafeHtmlParser(HTMLParser):
         self.replace_tags = replace_tags
         self.tags_to_purge = tags_to_purge
         self.allowed_attrs = allowed_attrs
+        super(SafeHtmlParser, self).__init__()
 
     def feed(self, data):
         self._body, self._unclosed, self.skip = [], deque(), False

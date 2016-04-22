@@ -5,12 +5,12 @@ import os
 import string
 import zipfile
 
-import portia2code.spiders
-
 from datetime import datetime
 from inspect import getsource
 from itertools import chain
 from os.path import join
+
+import portia2code.spiders
 
 from six import StringIO
 
@@ -22,6 +22,7 @@ from scrapy.utils.template import string_camelcase
 from slybot.utils import _build_sample
 from slybot.spider import IblSpider
 from slybot.starturls import generator
+
 from .samples import ItemBuilder
 from .templates import (
     ITEM_CLASS, ITEM_FIELD, ITEMS_IMPORTS, RULES, SPIDER_CLASS, SPIDER_FILE
@@ -32,6 +33,7 @@ log = logging.getLogger(__name__)
 
 
 class UpdatingZipFile(zipfile.ZipFile):
+    """ZipFile that buffers writes so that each file is only written once."""
 
     def __init__(self, file, mode="r", compression=zipfile.ZIP_STORED,
                  allowZip64=False):
@@ -42,11 +44,14 @@ class UpdatingZipFile(zipfile.ZipFile):
     _writestr = zipfile.ZipFile.writestr
 
     def writestr(self, zinfo, bytes, compress_type=None):
+        """Add provided file to buffer."""
         self._files[zinfo.orig_filename] = (zinfo, bytes, compress_type)
 
     def finalize(self):
+        """Write all buffered files to archive."""
         for zinfo, contents, compress_type in self._files.values():
             self._writestr(zinfo, contents, compress_type)
+        self._files = {}
 
 
 class Options(object):
@@ -73,31 +78,28 @@ class Options(object):
     files = []
 
 
-def load_project_data(open_func, project_dir):
+def load_project_data(open_func, spiders_list_func, project_dir):
     """Load project data using provided open_func and project directory."""
     # Load items and extractors from project
-    schemas = open_func(join(project_dir, 'items.json'))
-    extractors = open_func(join(project_dir, 'extractors.json'))
+    schemas = open_func(project_dir, 'items')
+    extractors = open_func(project_dir, 'extractors')
 
     # Load spiders and templates
     spiders = {}
-    spider_dir = join(project_dir, 'spiders')
-    spiders_list = [s for s in os.listdir(spider_dir) if s.endswith('.json')]
-    for spider_file in spiders_list:
-        spider_name = spider_file[:-5]
-        spider = open_func(join(spider_dir, spider_file))
+    spiders_list = spiders_list_func(project_dir)
+    for spider_name in spiders_list:
+        spider = open_func(project_dir, 'spiders', spider_name)
         if not spider:
             log.warning(
-                'Skipping "{}" spider as there is no data'.format(spider_name)
+                'Skipping "%s" spider as there is no data', spider_name
             )
             continue
         if 'template_names' in spider:
             samples = spider.get('template_names', [])
             spider['templates'] = []
             for sample_name in samples:
-                sample_file = '%s.json' % sample_name
-                sample_path = join(spider_dir, spider_name, sample_file)
-                sample = open_func(sample_path)
+                sample = open_func(project_dir, 'spiders', spider_name,
+                                   sample_name)
                 _build_sample(sample)
                 spider['templates'].append(sample)
         else:
@@ -116,8 +118,8 @@ def write_to_archive(archive, project_name, files):
         if not contents:
             continue
         if filepath is None or contents in (None, 'null'):
-            log.debug('Skipping file "%s" with contents "%r"' % (filepath,
-                                                                 contents))
+            log.debug('Skipping file "%s" with contents "%r"', filepath,
+                      contents)
             continue
         filepath = join(project_name, filepath)
         fileinfo = zipfile.ZipInfo(filepath, tstamp)
@@ -129,7 +131,7 @@ def find_files(project_name):
     """Find files needed for scrapy project templates."""
     sep = os.sep
     read_files = {}
-    for base, dirs, files in os.walk(join(TEMPLATES_PATH)):
+    for base, _, files in os.walk(join(TEMPLATES_PATH)):
         basepath = base[len(TEMPLATES_PATH):]
         if basepath.lstrip('/\\').startswith('module'):
             basepath = join(project_name, sep.join(basepath.split(sep)[2:]))
@@ -185,7 +187,7 @@ def create_fields(item_fields):
         if not _validate_identifier(name):
             log.warning(
                 'Skipping field with id "%s", name "%s" is not a valid '
-                'identifier' % (field_id, name))
+                'identifier', field_id, name)
             continue
         field_type = field.get('type', 'text')
         input_processor = repr(PROCESSOR_TYPES.get(field_type, 'lambda x: x'))
@@ -215,7 +217,7 @@ def create_schemas(items):
     return items_py, schema_names
 
 
-def create_spider(name, spider, spec, samples, schemas, extractors, items):
+def create_spider(name, spider, spec, schemas, extractors, items):
     """Convert a slybot spider into scrapy code."""
     cls_name = class_name(name)
     urls_type = getattr(spider, 'start_urls_type', 'start_urls')
@@ -264,8 +266,7 @@ def create_spiders(spiders, schemas, extractors, items):
     spider_data = []
     for name, (spider, spec) in spiders.items():
         log.info('Creating spider "%s"' % spider.name)
-        spider = create_spider(name, spider, spec, spec['templates'],
-                               schemas, extractors, items)
+        spider = create_spider(name, spider, spec, schemas, extractors, items)
         cleaned_name = _clean(name)
         filename = 'spiders/{}.py'.format(cleaned_name)
         data = '\n'.join((SPIDER_FILE(item_classes=item_classes),

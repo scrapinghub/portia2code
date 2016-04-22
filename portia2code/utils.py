@@ -18,8 +18,8 @@ def _validate_identifier(name):
         return False
     else:
         if (isinstance(mod, ast.Module) and len(mod.body) == 1 and
-            isinstance(mod.body[0], ast.Assign) and
-            len(mod.body[0].targets) == 1 and
+                isinstance(mod.body[0], ast.Assign) and
+                len(mod.body[0].targets) == 1 and
                 isinstance(mod.body[0].targets[0], ast.Name)):
             return True
     return False
@@ -28,7 +28,7 @@ def _validate_identifier(name):
 def _clean(name):
     if name.startswith('www.') and len(name) > 4:
         name = name[4:]
-    name = re.sub('[\s\.-]', '_', name.strip()).strip('_')
+    name = re.sub(r'[\s\.-]', '_', name.strip()).strip('_')
     return name
 
 
@@ -39,7 +39,7 @@ def class_name(name):
     # Remove trailing '_com'
     name = re.sub('_com$', '', name)
     # Replace all whitespace and '-' with '_'
-    name = re.sub('[\s-]', '_', name.title().strip()).strip('_')
+    name = re.sub(r'[\s-]', '_', name.title().strip()).strip('_')
     # Conform to python 2 allowed variable name
     name = re.sub('^[^_a-zA-Z]', '', name)
     name = re.sub('[^_a-zA-Z0-9]', '', name)
@@ -89,25 +89,25 @@ def build_selector(selector, attribute):
 
 
 def extractor_to_field(extractor, schema, extractors):
-    a = extractor.annotation
-    selector = a.metadata.get('selector')
+    anno = extractor.annotation
+    selector = anno.metadata.get('selector')
     if not selector:
         return []
-    content = (('#content', c) for c in a.surrounds_attribute or [])
+    content = (('#content', c) for c in anno.surrounds_attribute or [])
     attributes = chain(*([(k, v) for v in values]
-                         for k, values in a.tag_attributes))
+                         for k, values in anno.tag_attributes))
     fields = []
     for attribute, field in chain(content, attributes):
         fields.append(Field(field_name(field['field'], schema),
                             build_selector(selector, attribute),
-                            build_processors(field, schema, extractors),
+                            build_processors(field, extractors),
                             bool(field.get('required'))))
     return fields
 
 
 def container_to_item(extractor, fields, schema, item):
-    a = extractor.annotation
-    selector = a.metadata.get('selector')
+    anno = extractor.annotation
+    selector = anno.metadata.get('selector')
     if not selector:
         return None
     if isinstance(extractor, RepeatedContainerExtractor):
@@ -118,7 +118,7 @@ def container_to_item(extractor, fields, schema, item):
 
 def build_repeating_items(extractor, schema, item, selector, fields):
     containers = {s.strip(): [] for s in selector.split(',')}
-    prefix_lengths = set(map(len, containers))
+    prefix_lengths = {len(c) for c in containers}
     for field in fields:
         for selector in (s.strip() for s in field.selector.split(',')):
             for prefix_len in prefix_lengths:
@@ -134,7 +134,7 @@ def build_repeating_items(extractor, schema, item, selector, fields):
                   key=lambda x: x.selector)
 
 
-def build_processors(field, schema, extractors):
+def build_processors(field, extractors):
     processors = []
     # TODO: initialize with initial field type
     for extractor_id in field.get('extractors', []):

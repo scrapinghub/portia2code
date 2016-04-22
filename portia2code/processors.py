@@ -4,6 +4,7 @@ import six
 
 from six.moves.urllib.parse import urljoin, urlparse, urlunparse
 
+from copy import deepcopy
 from itertools import chain
 try:
     from itertools import izip_longest
@@ -18,16 +19,16 @@ from .parser import SafeHtmlParser
 
 
 # Regeps from Scrapely_CSS_IMAGERE.pattern
-_CSS_IMAGERE = re.compile('background(?:-image)?\\s*:\\s*url\\((.*?)\\)')
+_CSS_IMAGERE = re.compile(r'background(?:-image)?\s*:\s*url\((.*?)\)')
 _GENERIC_PATH_RE = re.compile('/?(?:[^/]+/)*(?:.+)')
-_IMAGE_PATH_RE = re.compile('/?(?:[^/]+/)*(?:.+\\.(?:mng|pct|bmp|gif|jpg|jpeg|'
-                            'png|pst|psp|tif|tiff|ai|drw|dxf|eps|ps|svg))')
-_NUMERIC_ENTITIES = re.compile("&#([0-9]+)(?:;|\s)", re.U)
-_PRICE_NUMBER_RE = re.compile('(?:^|[^a-zA-Z0-9])(\d+(?:\.\d+)?)'
-                              '(?:$|[^a-zA-Z0-9])')
-_NUMBER_RE = re.compile('(-?\d+(?:\.\d+)?)')
+_IMAGE_PATH_RE = re.compile(r'/?(?:[^/]+/)*(?:.+\.(?:mng|pct|bmp|gif|jpg|jpeg|'
+                            r'png|pst|psp|tif|tiff|ai|drw|dxf|eps|ps|svg))')
+_NUMERIC_ENTITIES = re.compile(r'&#([0-9]+)(?:;|\s)', re.U)
+_PRICE_NUMBER_RE = re.compile(r'(?:^|[^a-zA-Z0-9])(\d+(?:\.\d+)?)'
+                              r'(?:$|[^a-zA-Z0-9])')
+_NUMBER_RE = re.compile(r'(-?\d+(?:\.\d+)?)')
 _DECIMAL_RE = re.compile(r'(\d[\d\,]*(?:(?:\.\d+)|(?:)))', re.U | re.M)
-_VALPARTS_RE = re.compile("([\.,]?\d+)")
+_VALPARTS_RE = re.compile(r'([\.,]?\d+)')
 _SENTINEL = object()
 
 
@@ -41,17 +42,17 @@ def extract_image_url(text):
     imgurl = None
     if text:
         # check if the text is style content
-        m = _CSS_IMAGERE.search(text)
-        text = m.groups()[0] if m else text
+        match = _CSS_IMAGERE.search(text)
+        text = match.groups()[0] if match else text
         parsed = urlparse(text)
         path = None
-        m = _IMAGE_PATH_RE.search(parsed.path)
-        if m:
-            path = m.group()
+        match = _IMAGE_PATH_RE.search(parsed.path)
+        if match:
+            path = match.group()
         elif parsed.query:
-            m = _GENERIC_PATH_RE.search(parsed.path)
-            if m:
-                path = m.group()
+            match = _GENERIC_PATH_RE.search(parsed.path)
+            if match:
+                path = match.group()
         if path is not None:
             parsed = list(parsed)
             parsed[2] = path
@@ -63,7 +64,7 @@ def extract_image_url(text):
 
 class BaseProcessor(object):
     def __init__(self):
-        pass
+        super(BaseProcessor, self).__init__()
 
     def __repr__(self):
         return '%s(%s)' % (self.__class__.__name__, str(self))
@@ -182,8 +183,8 @@ class Url(Text):
 class Image(Text):
     def __call__(self, values):
         return super(Image, self).__call__([
-            v if isinstance(v, (dict, list)) else extract_image_url(v)
-            for v in values
+            val if isinstance(val, (dict, list)) else extract_image_url(val)
+            for val in values
         ])
 
 
@@ -196,19 +197,20 @@ class SafeHtml(Text):
 
     def __call__(self, values):
         results = []
-        for v in values:
-            if isinstance(v, (dict, list)):
-                results.append(v)
-            results.append(self.parser.feed(str(v)))
+        for val in values:
+            if isinstance(val, (dict, list)):
+                results.append(val)
+            results.append(self.parser.feed(str(val)))
         return results
 
 
 class Regex(BaseProcessor):
     def __init__(self, regexp):
-        self.regexp = regexp
         if isinstance(regexp, six.string_types):
             regexp = re.compile(regexp)
+        self.regexp = regexp.pattern
         self._regexp = regexp
+
 
     def __call__(self, values):
         results = []
@@ -224,3 +226,7 @@ class Regex(BaseProcessor):
                 u"".join([g for g in match.groups() or match.group() if g])
             )
         return results
+
+    def __deepcopy__(self, memo):
+        """Overwrite deepcopy so that the regexp is recalculated."""
+        return type(self)(deepcopy(self.regexp, memo))

@@ -13,6 +13,7 @@ class ItemBuilder(object):
         self.extractors = extractors
         self.items = items
         self.default_item = default_item
+        self.numfields = 0
 
     def extract(self, samples):
         data = []
@@ -38,21 +39,21 @@ class ItemBuilder(object):
             return self.container(extractors[0], schema_id)
         fields = []
         schema = self.schemas.get(schema_id, {})
-        for e in extractors:
-            if isinstance(e, RecordExtractor):
-                fields.extend(self.record_extractor(e, schema))
-            elif isinstance(e, BasicTypeExtractor):
-                fields.extend(self.basic_extractors(e, schema))
-            elif isinstance(e, BaseContainerExtractor):
-                fields.append(self.container(e, schema_id))
+        for ext in extractors:
+            if isinstance(ext, RecordExtractor):
+                fields.extend(self.record_extractor(ext, schema))
+            elif isinstance(ext, BasicTypeExtractor):
+                fields.extend(self.base_extractor(ext, schema))
+            elif isinstance(ext, BaseContainerExtractor):
+                fields.append(self.container(ext, schema_id))
         self.numfields += len(fields)
         return container_to_item(container, fields, schema,
                                  self.items.get(schema_id, self.default_item))
 
     def record_extractor(self, extractor, schema):
         items = []
-        for e in extractor.extractors:
-            items.extend(extractor_to_field(e, schema, self.extractors))
+        for ext in extractor.extractors:
+            items.extend(extractor_to_field(ext, schema, self.extractors))
         return items
 
     def base_extractor(self, extractor, schema):
