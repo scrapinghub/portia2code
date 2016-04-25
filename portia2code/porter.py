@@ -115,8 +115,6 @@ def write_to_archive(archive, project_name, files):
     """Write files to the project_name folder of the archive."""
     tstamp = datetime.now().timetuple()[:6]
     for filepath, contents in files:
-        if not contents:
-            continue
         if filepath is None or contents in (None, 'null'):
             log.debug('Skipping file "%s" with contents "%r"', filepath,
                       contents)
@@ -230,7 +228,7 @@ def create_spider(name, spider, spec, schemas, extractors, items):
         urls_spec = (getattr(spider, 'generated_urls', []) or
                      spec.get('generated_urls', []))
         if urls_spec:
-            start_urls = 'generator(%r)' % urls_spec
+            start_urls = 'UrlGenerator()(%r)' % urls_spec
 
     allowed = spider.allowed_domains
     crawling_options = spec.get('links_to_follow')

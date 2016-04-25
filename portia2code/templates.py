@@ -7,7 +7,7 @@ from scrapy.loader.processors import Identity
 from scrapy.spiders import Rule
 
 from ..utils.spiders import BasePortiaSpider
-from ..utils.starturls import generator
+from ..utils.starturls import UrlGenerator
 from ..utils.processors import Item, Field, Text, Number, Price, Date, Url, \
 Image, Regex{item_classes}
 
