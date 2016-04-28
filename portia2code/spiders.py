@@ -36,6 +36,7 @@ class BasePortiaSpider(CrawlSpider):
             if items:
                 for item in items:
                     yield item
+                break
 
     def load_item(self, definition, response):
         ld = PortiaItemLoader(item=definition.item(), response=response,

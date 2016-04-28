@@ -1,0 +1,4 @@
+six==1.10.0
+slybot==0.13.0b18
+autopep8==1.2.2
+autoflake==0.6.6

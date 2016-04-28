@@ -5,6 +5,7 @@ To install `portia_porter`:
 
     git clone https://github.com/scrapinghub/portia2code.git
     cd portia2code
+    pip install -r requirements.txt
     python setup.py install    
 
 
