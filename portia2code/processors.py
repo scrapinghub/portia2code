@@ -84,6 +84,9 @@ class BaseProcessor(object):
             values.append(repr(value))
         return ', '.join(values)
 
+    def __eq__(self, other):
+        return repr(self) == repr(other)
+
     def __hash__(self):
         return hash(str(self))
 

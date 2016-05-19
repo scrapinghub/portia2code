@@ -1,14 +1,16 @@
 import ast
 import re
 
+from collections import defaultdict
 from copy import deepcopy
-from itertools import chain
+from itertools import chain, groupby
 from slybot.plugins.scrapely_annotations.extraction import (
     RepeatedContainerExtractor
 )
 from .processors import (
     Item, Field, Text, Number, Price, Date, Url, Image, Regex, Identity
 )
+_NTH_CHILD_RE = re.compile('(:nth-child\((\d+)\))')
 
 
 def _validate_identifier(name):
@@ -105,6 +107,18 @@ def extractor_to_field(extractor, schema, extractors):
     return fields
 
 
+def shrink_selector(selectors, parent_selector):
+    new_selectors = []
+    parent_selector_len = len(parent_selector)
+    for selector in selectors:
+        if selector.startswith(parent_selector):
+            sel = selector[parent_selector_len:].strip()
+            if sel.startswith('>'):
+                sel = sel[1:].strip()
+            new_selectors.append(sel)
+    return new_selectors
+
+
 def container_to_item(extractor, fields, schema, item):
     anno = extractor.annotation
     selector = anno.metadata.get('selector')
@@ -113,25 +127,86 @@ def container_to_item(extractor, fields, schema, item):
     if isinstance(extractor, RepeatedContainerExtractor):
         return build_repeating_items(extractor, schema, item, selector,
                                      fields)
-    return [Item(item(), get_field(extractor, schema), selector, fields)]
+    new_fields = []
+    for field in fields:
+        sel = shrink_selector([field.selector], selector)
+        if sel:
+            field.selector = sel[0]
+        new_fields.append(field)
+    return [Item(item(), get_field(extractor, schema), selector, new_fields)]
 
 
 def build_repeating_items(extractor, schema, item, selector, fields):
-    containers = {s.strip(): [] for s in selector.split(',')}
-    prefix_lengths = {len(c) for c in containers}
+    containers = [s.strip() for s in selector.split(',')]
+    sel = sorted(set(generalise(containers)))
+    item_fields = []
     for field in fields:
-        for selector in (s.strip() for s in field.selector.split(',')):
-            for prefix_len in prefix_lengths:
-                prefix = selector[:prefix_len]
-                if prefix in containers:
-                    new_field = deepcopy(field)
-                    new_field.selector = selector
-                    containers[prefix].append(new_field)
-                    break
+        selectors = [s.strip() for s in field.selector.split(',')]
+        generalised = sorted(set(generalise(selectors)))
+        sels = set(chain(*(shrink_selector(generalised, s) for s in sel)))
+        if len(sels) > 1:
+            sels = [s for s in sels if '::attr' in s or '::text' in s]
+        elif sels and '::attr' not in sels[0] and '::text' not in sel[0]:
+            sels = [build_selector(sels[0], '#content')]
+        field.selector = ', '.join(sorted(sels))
+        item_fields.append(field)
     name = get_field(extractor, schema)
-    return sorted([Item(item(), name, sel, item_fields)
-                   for sel, item_fields in containers.items()],
-                  key=lambda x: x.selector)
+    return [Item(item(), name, ', '.join(sel), item_fields)]
+
+
+def generalise(selectors):
+    """
+    Find the most likely nth-child selector that's changing and generalise it.
+
+    >>> base = [
+    ...     u'.a > .sr_item:nth-child(%s) > .sr_item_content > p:nth-child(2)',
+    ...     u'.rr_item:nth-child(%s) > .sr_item_content',
+    ...     u'.sr_item:nth-child(%s) > .sr_item_content'
+    ... ]
+    >>> selectors = [s % i for s in base for i in range(0, 30, 5)]
+    >>> generalised = sorted(set(generalise(selectors).values()))
+    >>> generalised[0]
+    u'.a > .sr_item > .sr_item_content > p:nth-child(2)'
+    >>> generalised[1]
+    u'.rr_item > .sr_item_content'
+    >>> generalised[2]
+    u'.sr_item > .sr_item_content'
+    """
+    def starts(results):
+        return [s[-1][:s[0]] for s in results]
+
+    def start_positions(results):
+        return [s[0] for s in results]
+
+    parsed = [[(r.start(), r.groups()[-1], r.string)
+               for r in _NTH_CHILD_RE.finditer(s)]
+              for s in selectors]
+    grouped = groupby(sorted(parsed, key=starts), starts)
+    ogrouped = groupby(sorted(parsed, key=start_positions), start_positions)
+    groups = [list(v) for _, v in grouped] + [list(v) for _, v in ogrouped]
+    selectors_map = {}
+    for group in groups:
+        if len(group) == 1:
+            continue
+        similar = defaultdict(set)
+        selectors = set()
+        for section in group:
+            for start, value, selector in section:
+                selectors.add(selector)
+                similar[start].add(value)
+        try:
+            changing_element = max((k for k, v in similar.items()
+                                   if len(v) > 1))
+        except ValueError:
+            selectors_map.update({k: k for k in selectors})
+            continue
+        for selector in selectors:
+            generalised = re.sub(
+                selector[:changing_element] + ':nth-child\(\d+\)',
+                selector[:changing_element],
+                selector)
+            selectors_map[generalised] = selector
+    return selectors_map
 
 
 def build_processors(field, extractors):

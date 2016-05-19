@@ -30,7 +30,9 @@ class BasePortiaSpider(CrawlSpider):
             items = []
             try:
                 for definition in sample:
-                    items.append(self.load_item(definition, response))
+                    items.extend(
+                        [i for i in self.load_item(definition, response)]
+                    )
             except RequiredFieldMissing as exc:
                 self.logger.warning(str(exc))
             if items:
@@ -39,13 +41,21 @@ class BasePortiaSpider(CrawlSpider):
                 break
 
     def load_item(self, definition, response):
-        ld = PortiaItemLoader(item=definition.item(), response=response,
-                              baseurl=get_base_url(response))
-        for field in definition.fields:
-            if hasattr(field, 'fields'):
-                if field.name is not None:
-                    ld.add_value(field.name, self.load_item(field, response))
-            else:
-                ld.add_css(field.name, field.selector, *field.processors,
-                           required=field.required)
-        return ld.load_item()
+        selectors = response.css(definition.selector)
+        for selector in selectors:
+            selector = selector if selector else None
+            ld = PortiaItemLoader(
+                item=definition.item(),
+                selector=selector,
+                response=response,
+                baseurl=get_base_url(response)
+            )
+            for field in definition.fields:
+                if hasattr(field, 'fields'):
+                    if field.name is not None:
+                        ld.add_value(field.name,
+                                     self.load_item(field, selector))
+                else:
+                    ld.add_css(field.name, field.selector, *field.processors,
+                               required=field.required)
+            yield ld.load_item()
