@@ -11,12 +11,12 @@ from itertools import chain
 from os.path import join
 
 import portia2code.spiders
+import scrapy
 
 from six import StringIO
 
 from autoflake import fix_code
 from autopep8 import fix_lines
-from scrapy.commands.startproject import TEMPLATES_PATH
 from scrapy.settings import Settings
 from scrapy.utils.template import string_camelcase
 from slybot.utils import _build_sample
@@ -30,6 +30,7 @@ from .templates import (
 from .utils import (PROCESSOR_TYPES, _validate_identifier, _clean, class_name,
                     item_field_name)
 log = logging.getLogger(__name__)
+TEMPLATES_PATH = (scrapy.__path__[0], 'templates', 'project')
 
 
 class UpdatingZipFile(zipfile.ZipFile):
