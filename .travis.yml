@@ -1,0 +1,16 @@
+language: python
+python: 2.7
+sudo: required
+dist: trusty
+script: echo done
+deploy:
+  provider: pypi
+  distributions: sdist bdist_wheel
+  user: Ruairi.Fahy
+  password:
+    secure: uXfKaqMyihYhX4JWM+SkecEDhzdQR8akI2UmLU1+AeuOzUtbmP5buC7kGxq7Vr/eN8wlAQYNKUIDdwarC2Z3VvIZydCy8Ywe9sZ8uRh7T3+eZKC9OtP1ahHGMtfb5GCh2bP9Rop/Rsz5Nt955SDuQTQWPuraEcdZp9BaFWZ0qh5okDZG6O3dIPMmPSlyAx6ns7YdVVILmojg1RO5gUWO6UBCxAZ/bXO7v+5M2ipdln+vDCfDadfUze3f9Clk2iTg0+b8784vXNPzNZx+6XTO75SBbU7fspHoaUsGxzZ+aiYRRiR9zBqTZRfGuI+2Cq3P//c1gksmibIKUp945OnJEGUkQNO6BUbN9rTaanm5tJLiXJuXE0ycGCNoIdgcW+LSvlAIADLeMng9JBW5cdHWfgdQzzHQbYSCJfMT75JbAUW9qTozSRmKOvsY1T/leN6bY/tZGEk9qsU9hTcSzDG1nnkQ+3THRrCRdHjJm9I5Gj1oz1ATcqQA7/ytES08fMflWzsN3p4ym0MWQgO1QBzIvGUJuzfb60z0cd/Cwb0SSrOJYsnFvDn8bc7FAry19dcYTDyhFV2Z3r8N1BBm0m4QIlUEfhIPrBKLLxJGI0dpjbpAoa0XYpZ8pGYMbaHLyq7LCVPles30DMaOKcDDGdbeYIt88xGYTCaZ4H5nJP0KU4I=
+  on:
+    all_branches: true
+    tags: true
+    repo: scrapinghub/portia2code
+    condition: $TRAVIS_TAG =~ ^portia2code-[0-9][.][0-9]*
