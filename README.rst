@@ -5,10 +5,7 @@ To install ``portia_porter``:
 
 ::
 
-    git clone https://github.com/scrapinghub/portia2code.git
-    cd portia2code
-    pip install -r requirements.txt
-    python setup.py install    
+    pip install portia2code
 
 Purpose
 =======
@@ -38,21 +35,14 @@ command:
 
     portia_porter PROJECT_DIR OUT_DIR
 
-If you use the hosted version of portia on scrapinghub you can port it
-by running:
+You can download your portia project as python using
 
 ::
 
-    export SHUB_APIKEY="APIKEY"
     export PROJECT_ID="PROJECT_ID"
-    export PROJECT_DIR="PROJECT_DIR"
-    export PROJECT_NAME="PROJECT_NAME"
-    curl --user $SHUB_APIKEY: https://portia.scrapinghub.com/api/projects/$PROJECT_ID/download \
-            > /tmp/portia_project.zip &&
-        unzip /tmp/portia_project.zip -d /tmp/portia_project &&
-        portia_porter /tmp/portia_project $PROJECT_DIR/$PROJECT_NAME.zip &&
-        rm -r /tmp/portia_project &&
-        rm /tmp/portia_project.zip
+    curl https://portia/api/projects/$PROJECT_ID/download?format=code
+
+
 
 How it works
 ============

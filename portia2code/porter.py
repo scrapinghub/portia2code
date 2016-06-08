@@ -130,7 +130,7 @@ def find_files(project_name):
     """Find files needed for scrapy project templates."""
     sep = os.sep
     read_files = {}
-    for base, _, files in os.walk(join(TEMPLATES_PATH)):
+    for base, _, files in os.walk(join(*TEMPLATES_PATH)):
         basepath = base[len(TEMPLATES_PATH):]
         if basepath.lstrip('/\\').startswith('module'):
             basepath = join(project_name, sep.join(basepath.split(sep)[2:]))
