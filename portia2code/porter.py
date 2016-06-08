@@ -132,8 +132,8 @@ def find_files(project_name):
     read_files = {}
     for base, _, files in os.walk(join(*TEMPLATES_PATH)):
         basepath = base[len(TEMPLATES_PATH):]
-        if basepath.lstrip('/\\').startswith('module'):
-            basepath = join(project_name, sep.join(basepath.split(sep)[2:]))
+        splitpath = basepath.partition('%smodule' % sep)[2:]
+        basepath = join(project_name, *[p.lstrip(sep) for p in splitpath])
         for filename in files:
             if filename.endswith(('.pyc', '.pyo')):
                 continue
