@@ -277,6 +277,7 @@ def create_spiders(spiders, schemas, extractors, items):
 
 def port_project(dir_name, schemas, spiders, extractors):
     """Create project layout, default files and project specific code."""
+    dir_name = class_name(dir_name)
     zbuff = StringIO()
     archive = UpdatingZipFile(zbuff, "w", zipfile.ZIP_DEFLATED)
     write_to_archive(archive, '', start_scrapy_project(dir_name).items())
