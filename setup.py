@@ -3,8 +3,16 @@
 from setuptools import setup, find_packages
 from portia2code import __version__ as version
 
-install_requires = ['Scrapy', 'slybot', 'dateparser', 'six', 'w3lib',
-                    'scrapely', 'autoflake', 'autopep8']
+install_requires = [
+    'Scrapy',
+    'slybot>=0.13.0b20', 
+    'dateparser',
+    'six==1.10.0',
+    'w3lib',
+    'scrapely',
+    'autoflake==0.6.6',
+    'autopep8==1.2.2'
+]
 
 setup(
     name='portia2code',
