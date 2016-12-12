@@ -2,6 +2,8 @@ from scrapy.spiders import CrawlSpider
 from scrapy.loader import ItemLoader
 from scrapy.utils.response import get_base_url
 
+from .starturls import FeedGenerator, FragmentGenerator
+
 
 class RequiredFieldMissing(Exception):
     def __init__(self, msg):
@@ -24,6 +26,18 @@ class PortiaItemLoader(ItemLoader):
 
 class BasePortiaSpider(CrawlSpider):
     items = []
+
+    def start_requests(self):
+        for url in self.start_urls:
+            if isinstance(url, dict):
+                type_ = url['type']
+                if type_ == 'generated':
+                    for generated_url in FragmentGenerator()(url):
+                        yield self.make_requests_from_url(generated_url)
+                elif type_ == 'feed':
+                    yield FeedGenerator(self.parse)(url)
+            else:
+                yield self.make_requests_from_url(url)
 
     def parse_item(self, response):
         for sample in self.items:

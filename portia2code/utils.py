@@ -2,7 +2,7 @@ import ast
 import re
 
 from collections import defaultdict
-from copy import deepcopy
+from inspect import getsource
 from itertools import chain, groupby
 from slybot.plugins.scrapely_annotations.extraction import (
     RepeatedContainerExtractor
@@ -221,3 +221,25 @@ def build_processors(field, extractors):
         elif extractor.get('type_extractor') in PROCESSOR_TYPES:
             processors.append(PROCESSOR_TYPES[extractor['type_extractor']])
     return processors
+
+
+def merge_sources(*sources):
+    def sort_imports(import_string):
+        order = 0
+        if import_string.startswith('import .'):
+            order = 1
+        elif import_string.startswith('from .'):
+            order = 3
+        elif import_string.startswith('from '):
+            order = 2
+        return order, import_string
+    sources = [getsource(source).splitlines() for source in sources]
+    imports = []
+    for source in sources:
+        for line in source:
+            if line.startswith(('from', 'import')):
+                imports.append(line)
+    without_imports = (line for source in chain(sources) for line in source
+                       if not line.startswith(('from', 'import')))
+    imports.sort(key=sort_imports)
+    return '\n'.join(chain(imports, without_imports))

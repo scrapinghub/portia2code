@@ -1,13 +1,14 @@
 SPIDER_FILE = """\
 from __future__ import absolute_import
 
+from scrapy import Request
 from scrapy.linkextractors import LinkExtractor
 from scrapy.loader import ItemLoader
 from scrapy.loader.processors import Identity
 from scrapy.spiders import Rule
 
 from ..utils.spiders import BasePortiaSpider
-from ..utils.starturls import UrlGenerator
+from ..utils.starturls import FeedGenerator, FragmentGenerator
 from ..utils.processors import Item, Field, Text, Number, Price, Date, Url, \
 Image, Regex{item_classes}
 
@@ -75,4 +76,14 @@ rules = [
             follow=True
         )
     ]\
+""".format
+SETUP = """\
+from setuptools import setup, find_packages
+
+setup(
+    name         = 'project',
+    version      = '1.0',
+    packages     = find_packages(),
+    entry_points = {{'scrapy': ['settings = {}.settings']}},
+)
 """.format

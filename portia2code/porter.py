@@ -21,14 +21,15 @@ from scrapy.settings import Settings
 from scrapy.utils.template import string_camelcase
 from slybot.utils import _build_sample
 from slybot.spider import IblSpider
-from slybot.starturls import generator
+from slybot.starturls import fragment_generator, feed_generator
 
 from .samples import ItemBuilder
 from .templates import (
-    ITEM_CLASS, ITEM_FIELD, ITEMS_IMPORTS, RULES, SPIDER_CLASS, SPIDER_FILE
+    ITEM_CLASS, ITEM_FIELD, ITEMS_IMPORTS, RULES, SPIDER_CLASS, SPIDER_FILE,
+    SETUP
 )
 from .utils import (PROCESSOR_TYPES, _validate_identifier, _clean, class_name,
-                    item_field_name)
+                    item_field_name, merge_sources)
 log = logging.getLogger(__name__)
 TEMPLATES_PATH = (scrapy.__path__[0], 'templates', 'project')
 
@@ -155,7 +156,11 @@ def start_scrapy_project(project_name):
         )
         if path.endswith('.tmpl'):
             path = path[:-len('.tmpl')]
+        if path.endswith('scrapy.cfg'):
+            path = 'scrapy.cfg'
         out_files[path] = contents
+    out_files['setup.py'] = SETUP(project_name)
+
     return out_files
 
 
@@ -203,7 +208,8 @@ def create_library_files():
         ('utils/parser.py', getsource(portia2code.parser)),
         ('utils/processors.py', getsource(portia2code.processors)),
         ('utils/spiders.py', getsource(portia2code.spiders)),
-        ('utils/starturls.py', getsource(generator))
+        ('utils/starturls.py', merge_sources(fragment_generator,
+                                             feed_generator))
     ]
 
 
@@ -219,17 +225,14 @@ def create_schemas(items):
 def create_spider(name, spider, spec, schemas, extractors, items):
     """Convert a slybot spider into scrapy code."""
     cls_name = class_name(name)
-    urls_type = getattr(spider, 'start_urls_type', 'start_urls')
     start_urls = []
-    if urls_type == 'start_urls':
-        urls = getattr(spider, 'start_urls', []) or spec.get('start_urls', [])
-        if urls:
-            start_urls = repr(urls)
-    elif urls_type == 'generated_urls':
-        urls_spec = (getattr(spider, 'generated_urls', []) or
-                     spec.get('generated_urls', []))
-        if urls_spec:
-            start_urls = 'UrlGenerator()(%r)' % urls_spec
+    for url in spider._start_urls.normalize():
+        type_ = url.get('type')
+        if type_ == 'url':
+            start_urls.append('%r' % url['url'])
+        else:
+            start_urls.append('%r' % url)
+    start_urls = '[%s]' % ',\n'.join(start_urls)
 
     allowed = spider.allowed_domains
     crawling_options = spec.get('links_to_follow')
