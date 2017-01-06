@@ -102,6 +102,16 @@ def load_project_data(open_func, spiders_list_func, project_dir):
             for sample_name in samples:
                 sample = open_func(project_dir, 'spiders', spider_name,
                                    sample_name)
+                for type_ in ('original_body', 'rendered_body'):
+                    if type_ in sample:
+                        continue
+                    try:
+                        html = open_func(project_dir, 'spiders', spider_name,
+                                         sample_name, '%s.html' % type_,
+                                         raw=True)
+                    except IOError:
+                        continue
+                    sample[type_] = html
                 _build_sample(sample)
                 spider['templates'].append(sample)
         else:

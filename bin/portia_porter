@@ -4,7 +4,7 @@ import logging
 import os
 
 from portia2code.porter import load_project_data, port_project
-from portia2code.utils import _validate_identifier
+from portia2code.utils import _validate_identifier, decode
 
 if __name__ == '__main__':
     logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s',
@@ -36,14 +36,16 @@ if __name__ == '__main__':
     else:
         raise ValueError('Output path "%s" does not exist' % out_dir)
 
-    def open_file_func(*path):
+    def open_file_func(*path, **kwargs):
         """Open files from filesystem."""
+        raw = kwargs.pop('raw', False)
         full_path = ''
         for path_item in path:
             full_path = join(full_path, path_item)
-        full_path = '{}.json'.format(full_path)
+        if not raw:
+            full_path = '{}.json'.format(full_path)
         with open(full_path) as f:
-            return json.load(f)
+            return decode(f.read()) if raw else json.load(f)
 
     def list_spiders_func(project):
         return [
