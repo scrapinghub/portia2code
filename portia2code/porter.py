@@ -88,7 +88,7 @@ def load_project_data(open_func, spiders_list_func, project_dir):
 
     # Load spiders and templates
     spiders = {}
-    spiders_list = spiders_list_func(project_dir)
+    spiders_list = spiders_list_func()
     for spider_name in spiders_list:
         spider = open_func(project_dir, 'spiders', spider_name)
         if not spider:
