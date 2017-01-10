@@ -47,7 +47,7 @@ if __name__ == '__main__':
         with open(full_path) as f:
             return decode(f.read()) if raw else json.load(f)
 
-    def list_spiders_func(project):
+    def list_spiders_func():
         return [
             s[:-len('.json')] for s in os.listdir(join(project_dir, 'spiders'))
             if s.endswith('.json')
