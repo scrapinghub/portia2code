@@ -13,15 +13,15 @@ from os.path import join
 import portia2code.spiders
 import scrapy
 
-from six import StringIO
+from six import BytesIO
 
-from autoflake import fix_code
-from autopep8 import fix_lines
+from autopep8 import fix_code
 from scrapy.settings import Settings
 from scrapy.utils.template import string_camelcase
-from slybot.utils import _build_sample
+from slybot.utils import SpiderLoader
 from slybot.spider import IblSpider
 from slybot.starturls import fragment_generator, feed_generator
+from w3lib.util import to_unicode, to_bytes
 
 from .samples import ItemBuilder
 from .templates import (
@@ -32,6 +32,9 @@ from .utils import (PROCESSOR_TYPES, _validate_identifier, _clean, class_name,
                     item_field_name, merge_sources)
 log = logging.getLogger(__name__)
 TEMPLATES_PATH = (scrapy.__path__[0], 'templates', 'project')
+OPTIONS = {
+    'aggressive': 2
+}
 
 
 class UpdatingZipFile(zipfile.ZipFile):
@@ -52,74 +55,25 @@ class UpdatingZipFile(zipfile.ZipFile):
     def finalize(self):
         """Write all buffered files to archive."""
         for zinfo, contents, compress_type in self._files.values():
-            self._writestr(zinfo, contents, compress_type)
+            self._writestr(zinfo, to_bytes(contents), compress_type)
         self._files = {}
 
 
-class Options(object):
-    """Settings for autopep8."""
-
-    version = '1.0.0'
-    verbose = None
-    diff = False
-    in_place = False
-    global_config = False
-    ignore_local_config = False
-    recursive = False
-    jobs = 1
-    pep8_passes = -1
-    aggressive = 3
-    experimental = False
-    exclude = ''
-    list_fixes = False
-    ignore = ''
-    select = ''
-    max_line_length = 79
-    line_range = None
-    indent_size = 4
-    files = []
-
-
-def load_project_data(open_func, spiders_list_func, project_dir):
+def load_project_data(storage):
     """Load project data using provided open_func and project directory."""
     # Load items and extractors from project
-    schemas = open_func(project_dir, 'items')
-    extractors = open_func(project_dir, 'extractors')
+
+    schemas = storage.open('items.json')
+    extractors = storage.open('extractors.json')
 
     # Load spiders and templates
+    spider_loader = SpiderLoader(storage)
     spiders = {}
-    spiders_list = spiders_list_func()
-    for spider_name in spiders_list:
-        spider = open_func(project_dir, 'spiders', spider_name)
-        if not spider:
-            log.warning(
-                'Skipping "%s" spider as there is no data', spider_name
-            )
-            continue
-        if 'template_names' in spider:
-            samples = spider.get('template_names', [])
-            spider['templates'] = []
-            for sample_name in samples:
-                sample = open_func(project_dir, 'spiders', spider_name,
-                                   sample_name)
-                for type_ in ('original_body', 'rendered_body'):
-                    if type_ in sample:
-                        continue
-                    try:
-                        html = open_func(project_dir, 'spiders', spider_name,
-                                         sample_name, '%s.html' % type_,
-                                         raw=True)
-                    except IOError:
-                        continue
-                    sample[type_] = html
-                _build_sample(sample)
-                spider['templates'].append(sample)
-        else:
-            for sample in spider.get('templates', []):
-                _build_sample(sample)
-        spiders[spider_name] = (IblSpider(spider_name, spider, schemas,
-                                          extractors, Settings()),
-                                spider)
+    for spider_name in spider_loader.spider_names:
+        spider = spider_loader[spider_name]
+        crawler = IblSpider(spider_name, spider, schemas, extractors,
+                            Settings())
+        spiders[spider_name] = (crawler, spider)
     return schemas, extractors, spiders
 
 
@@ -198,6 +152,8 @@ def create_fields(item_fields):
     fields = []
     for field_id, field in item_fields.items():
         name = item_field_name(field.get('name', field_id))
+        if name[0].isdigit():
+            name = '_{}'.format(name)
         if not _validate_identifier(name):
             log.warning(
                 'Skipping field with id "%s", name "%s" is not a valid '
@@ -227,8 +183,7 @@ def create_schemas(items):
     """Create and write schemas from definitions."""
     schema_classes, schema_names = create_schemas_classes(items)
     items_py = '\n'.join(chain([ITEMS_IMPORTS], schema_classes)).strip()
-    items_py = fix_lines(fix_code(items_py.decode('utf-8')).splitlines(),
-                         Options)
+    items_py = fix_code(to_unicode(items_py), OPTIONS)
     return items_py, schema_names
 
 
@@ -283,7 +238,7 @@ def create_spiders(spiders, schemas, extractors, items):
         filename = 'spiders/{}.py'.format(cleaned_name)
         data = '\n'.join((SPIDER_FILE(item_classes=item_classes),
                           spider.strip()))
-        code = fix_lines(fix_code(data.decode('utf-8')).splitlines(), Options)
+        code = fix_code(to_unicode(data), OPTIONS)
         spider_data.append((filename, code))
     return spider_data
 
@@ -291,7 +246,7 @@ def create_spiders(spiders, schemas, extractors, items):
 def port_project(dir_name, schemas, spiders, extractors):
     """Create project layout, default files and project specific code."""
     dir_name = class_name(dir_name)
-    zbuff = StringIO()
+    zbuff = BytesIO()
     archive = UpdatingZipFile(zbuff, "w", zipfile.ZIP_DEFLATED)
     write_to_archive(archive, '', start_scrapy_project(dir_name).items())
     items_py, schema_names = create_schemas(schemas)

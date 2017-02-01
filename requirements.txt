@@ -1,5 +1,4 @@
 six==1.10.0
-slybot==0.13.0b20
-autopep8==1.2.2
-autoflake==0.6.6
+slybot>=0.13.0b32
+autopep8==1.2.4
 chardet==2.3.0

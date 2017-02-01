@@ -1,8 +1,5 @@
 import ast
-import itertools
 import re
-
-import chardet
 
 from collections import defaultdict
 from inspect import getsource
@@ -10,15 +7,10 @@ from itertools import chain, groupby
 from slybot.plugins.scrapely_annotations.extraction import (
     RepeatedContainerExtractor
 )
-from w3lib.encoding import html_body_declared_encoding
 from .processors import (
     Item, Field, Text, Number, Price, Date, Url, Image, Regex, Identity
 )
 _NTH_CHILD_RE = re.compile('(:nth-child\((\d+)\))')
-ENCODINGS = ['UTF-8', 'ISO-8859-1', 'Windows-1251', 'Shift JIS',
-             'Windows-1252', 'GB2312', 'EUC-KR', 'EUC-JP', 'GBK', 'ISO-8859-2',
-             'Windows-1250', 'ISO-8859-15', 'Windows-1256', 'ISO-8859-9',
-             'Big5', 'Windows-1254', 'Windows-874']
 
 
 def _validate_identifier(name):
@@ -253,20 +245,3 @@ def merge_sources(*sources):
                        if not line.startswith(('from', 'import')))
     imports.sort(key=sort_imports)
     return '\n'.join(chain(imports, without_imports))
-
-
-def decode(html):
-    encoding = html_body_declared_encoding(html)
-    default = []
-    if encoding:
-        default = [encoding]
-    for encoding in itertools.chain(default, ENCODINGS):
-        try:
-            return html.decode(encoding)
-        except AttributeError:
-            return html  # html is already unicode (py3) or not a string
-        except (UnicodeDecodeError, LookupError):
-            # Ignore unicode errors and lookup errors and move to next encoding
-            pass
-    encoding = chardet.detect(html).get('encoding')
-    return html.decode(encoding)
