@@ -214,7 +214,6 @@ class Regex(BaseProcessor):
         self.regexp = regexp.pattern
         self._regexp = regexp
 
-
     def __call__(self, values):
         results = []
         for value in values:

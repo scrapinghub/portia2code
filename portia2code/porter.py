@@ -155,7 +155,7 @@ def create_fields(item_fields):
     fields = []
     for field_id, field in item_fields.items():
         name = item_field_name(field.get('name', field_id))
-        if name[0].isdigit():
+        if name and name[0].isdigit():
             name = '_{}'.format(name)
         if not _validate_identifier(name):
             log.warning(

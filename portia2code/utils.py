@@ -10,7 +10,7 @@ from slybot.plugins.scrapely_annotations.extraction import (
 from .processors import (
     Item, Field, Text, Number, Price, Date, Url, Image, Regex, Identity
 )
-_NTH_CHILD_RE = re.compile('(:nth-child\((\d+)\))')
+_NTH_CHILD_RE = re.compile('(:nth-child\([+n]*(\d+)[+n]*\))')
 
 
 def _validate_identifier(name):
@@ -86,8 +86,10 @@ def field_name(field, schema):
 
 def build_selector(selector, attribute):
     if attribute == '#content':
-        return '%s *::text' % selector
-    return '%s::attr(%s)' % (selector, attribute)
+        section = '{} *::text'
+    else:
+        section = '{{}}::attr({})'.format(attribute)
+    return ', '.join(section.format(s.strip()) for s in selector.split(','))
 
 
 def extractor_to_field(extractor, schema, extractors):
@@ -131,9 +133,9 @@ def container_to_item(extractor, fields, schema, item):
                                      fields)
     new_fields = []
     for field in fields:
-        sel = shrink_selector([field.selector], selector)
+        sel = shrink_selector(field.selector.split(','), selector)
         if sel:
-            field.selector = sel[0]
+            field.selector = ', '.join(sel)
         new_fields.append(field)
     return [Item(item(), get_field(extractor, schema), selector, new_fields)]
 
