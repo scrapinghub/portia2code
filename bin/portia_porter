@@ -10,17 +10,21 @@ if __name__ == '__main__':
     logging.basicConfig(format='%(asctime)s %(levelname)s: %(message)s',
                         datefmt='%Y-%m-%d %H:%M:%S',
                         level=logging.INFO)
+    import argparse
     import sys
     from slybot.utils import Storage
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--selector', help='which type of selector to output',
+                        choices=['css', 'xpath'], default='css')
+    parser.add_argument('from', help='directory of portia project')
+    parser.add_argument('to', default='.',
+                        help='directory to output converted project')
+    args = vars(parser.parse_args())
 
     log = logging.getLogger(__name__)
-    project_dir = sys.argv[1]
-    try:
-        out_dir = os.path.abspath(sys.argv[2])
-        dir_name = os.path.split(out_dir)[-1]
-    except IndexError:
-        out_dir = os.path.abspath('./')
-        dir_name = os.path.split(os.path.abspath(project_dir))[-1]
+    project_dir = os.path.abspath(args['from'])
+    out_dir = os.path.abspath(args['to'])
+    dir_name = os.path.split(out_dir)[-1]
     if dir_name.endswith('.zip'):
         out_dir = os.path.abspath(os.path.dirname(dir_name))
         dir_name = dir_name[:-len('.zip')]
@@ -36,7 +40,8 @@ if __name__ == '__main__':
 
     # Port project from portia definitions to scrapy code
     schemas, extractors, spiders = load_project_data(Storage(project_dir))
-    project_zip = port_project(dir_name, schemas, spiders, extractors).read()
+    project_zip = port_project(
+        dir_name, schemas, spiders, extractors, args['selector']).read()
     # Write contents to file
     log.info('Writing project to "%s"', out_path)
     with open(out_path, 'wb') as f:

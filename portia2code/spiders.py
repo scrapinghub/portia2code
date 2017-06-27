@@ -55,7 +55,8 @@ class BasePortiaSpider(CrawlSpider):
                 break
 
     def load_item(self, definition, response):
-        selectors = response.css(definition.selector)
+        query = response.xpath if definition.type == 'xpath' else response.css
+        selectors = query(definition.selector)
         for selector in selectors:
             selector = selector if selector else None
             ld = PortiaItemLoader(
@@ -69,6 +70,9 @@ class BasePortiaSpider(CrawlSpider):
                     if field.name is not None:
                         ld.add_value(field.name,
                                      self.load_item(field, selector))
+                elif field.type == 'xpath':
+                    ld.add_xpath(field.name, field.selector, *field.processors,
+                                 required=field.required)
                 else:
                     ld.add_css(field.name, field.selector, *field.processors,
                                required=field.required)

@@ -5,7 +5,7 @@ from portia2code import __version__ as version
 
 install_requires = [
     'Scrapy',
-    'slybot>=0.13.0b20', 
+    'slybot>=0.13.0', 
     'dateparser',
     'six==1.10.0',
     'w3lib',

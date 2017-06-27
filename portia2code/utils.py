@@ -2,6 +2,7 @@ import ast
 import re
 
 from collections import defaultdict
+from cssselect import GenericTranslator
 from inspect import getsource
 from itertools import chain, groupby
 from slybot.plugins.scrapely_annotations.extraction import (
@@ -32,6 +33,12 @@ def _clean(name):
         name = name[4:]
     name = re.sub(r'[\s\.-]', '_', name.strip()).strip('_')
     return name
+
+
+def css_to_xpath(selector):
+    if not selector:
+        return selector
+    return GenericTranslator().css_to_xpath(selector)
 
 
 def class_name(name):
@@ -84,15 +91,23 @@ def field_name(field, schema):
         return field
 
 
-def build_selector(selector, attribute):
+def build_selector(selector, attribute, selector_type):
+    if selector_type == 'xpath':
+        if attribute == '#content':
+            section = '{}//text()'
+        else:
+            section = '{{}}/@{}'.format(attribute)
+        selectors = (css_to_xpath(q) for q in selector.split(','))
+        return ' | '.join(section.format(s.strip()) for s in selectors)
     if attribute == '#content':
         section = '{} *::text'
     else:
         section = '{{}}::attr({})'.format(attribute)
-    return ', '.join(section.format(s.strip()) for s in selector.split(','))
+    query = ', '.join(section.format(s.strip()) for s in selector.split(','))
+    return query
 
 
-def extractor_to_field(extractor, schema, extractors):
+def extractor_to_field(extractor, schema, extractors, selector_type='css'):
     anno = extractor.annotation
     selector = anno.metadata.get('selector')
     if not selector:
@@ -105,9 +120,10 @@ def extractor_to_field(extractor, schema, extractors):
         if not isinstance(field, dict):
             continue
         fields.append(Field(field_name(field['field'], schema),
-                            build_selector(selector, attribute),
+                            build_selector(selector, attribute, selector_type),
                             build_processors(field, extractors),
-                            bool(field.get('required'))))
+                            bool(field.get('required')),
+                            selector_type))
     return fields
 
 
@@ -123,24 +139,28 @@ def shrink_selector(selectors, parent_selector):
     return new_selectors
 
 
-def container_to_item(extractor, fields, schema, item):
+def container_to_item(extractor, fields, schema, item, selector_type):
     anno = extractor.annotation
     selector = anno.metadata.get('selector')
     if not selector:
         return None
     if isinstance(extractor, RepeatedContainerExtractor):
         return build_repeating_items(extractor, schema, item, selector,
-                                     fields)
+                                     fields, selector_type)
     new_fields = []
     for field in fields:
         sel = shrink_selector(field.selector.split(','), selector)
         if sel:
             field.selector = ', '.join(sel)
         new_fields.append(field)
-    return [Item(item(), get_field(extractor, schema), selector, new_fields)]
+    if selector_type == 'xpath':
+        selector = css_to_xpath(selector)
+    return [Item(item(), get_field(extractor, schema), selector, new_fields,
+                 selector_type)]
 
 
-def build_repeating_items(extractor, schema, item, selector, fields):
+def build_repeating_items(extractor, schema, item, selector, fields,
+                          selector_type='css'):
     containers = [s.strip() for s in selector.split(',')]
     sel = sorted(set(generalise(containers)))
     item_fields = []
@@ -151,11 +171,15 @@ def build_repeating_items(extractor, schema, item, selector, fields):
         if len(sels) > 1:
             sels = [s for s in sels if '::attr' in s or '::text' in s]
         elif sels and '::attr' not in sels[0] and '::text' not in sel[0]:
-            sels = [build_selector(sels[0], '#content')]
+            sels = [build_selector(sels[0], '#content', selector_type)]
         field.selector = ', '.join(sorted(sels))
+        field.type = selector_type
         item_fields.append(field)
     name = get_field(extractor, schema)
-    return [Item(item(), name, ', '.join(sel), item_fields)]
+    selector = ', '.join(sel)
+    if selector_type == 'xpath':
+        selector = css_to_xpath(selector)
+    return [Item(item(), name, selector, item_fields, selector_type)]
 
 
 def generalise(selectors):

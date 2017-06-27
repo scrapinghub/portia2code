@@ -8,12 +8,14 @@ from .utils import extractor_to_field, container_to_item
 
 
 class ItemBuilder(object):
-    def __init__(self, schemas, extractors, items, default_item):
+    def __init__(self, schemas, extractors, items, default_item,
+                 selector='css'):
         self.schemas = schemas
         self.extractors = extractors
         self.items = items
         self.default_item = default_item
         self.numfields = 0
+        self.selector = selector
 
     def extract(self, samples):
         data = []
@@ -48,13 +50,16 @@ class ItemBuilder(object):
                 fields.append(self.container(ext, schema_id))
         self.numfields += len(fields)
         return container_to_item(container, fields, schema,
-                                 self.items.get(schema_id, self.default_item))
+                                 self.items.get(schema_id, self.default_item),
+                                 self.selector)
 
     def record_extractor(self, extractor, schema):
         items = []
         for ext in extractor.extractors:
-            items.extend(extractor_to_field(ext, schema, self.extractors))
+            items.extend(extractor_to_field(ext, schema, self.extractors,
+                                            self.selector))
         return items
 
     def base_extractor(self, extractor, schema):
-        return extractor_to_field(extractor, schema, self.extractors)
+        return extractor_to_field(extractor, schema, self.extractors,
+                                  self.selector)

@@ -190,7 +190,8 @@ def create_schemas(items):
     return items_py, schema_names
 
 
-def create_spider(name, spider, spec, schemas, extractors, items):
+def create_spider(name, spider, spec, schemas, extractors, items,
+                  selector='css'):
     """Convert a slybot spider into scrapy code."""
     cls_name = class_name(name)
     start_urls = []
@@ -217,7 +218,7 @@ def create_spider(name, spider, spec, schemas, extractors, items):
     # TODO: Add support for auto
     rules = RULES(allow=allow, deny=deny)
     item_imports = ItemBuilder(
-        schemas, extractors, items, items['_PortiaItem']).extract(
+        schemas, extractors, items, items['_PortiaItem'], selector).extract(
         spider.plugins[0].extractors
     )
     return SPIDER_CLASS(
@@ -226,7 +227,7 @@ def create_spider(name, spider, spec, schemas, extractors, items):
     )
 
 
-def create_spiders(spiders, schemas, extractors, items):
+def create_spiders(spiders, schemas, extractors, items, selector='css'):
     """Create all spiders from slybot spiders."""
     item_classes = ''
     if items:
@@ -236,7 +237,8 @@ def create_spiders(spiders, schemas, extractors, items):
     spider_data = []
     for name, (spider, spec) in spiders.items():
         log.info('Creating spider "%s"' % spider.name)
-        spider = create_spider(name, spider, spec, schemas, extractors, items)
+        spider = create_spider(name, spider, spec, schemas, extractors, items,
+                               selector)
         cleaned_name = _clean(name)
         filename = 'spiders/{}.py'.format(cleaned_name)
         data = '\n'.join((SPIDER_FILE(item_classes=item_classes),
@@ -246,7 +248,7 @@ def create_spiders(spiders, schemas, extractors, items):
     return spider_data
 
 
-def port_project(dir_name, schemas, spiders, extractors):
+def port_project(dir_name, schemas, spiders, extractors, selector='css'):
     """Create project layout, default files and project specific code."""
     dir_name = class_name(dir_name)
     zbuff = BytesIO()
@@ -270,7 +272,8 @@ def port_project(dir_name, schemas, spiders, extractors):
         schema_names[_id] = items['%sItem' % name]
     schema_names['_PortiaItem'] = items['PortiaItem']
 
-    spider_data = create_spiders(spiders, schemas, extractors, schema_names)
+    spider_data = create_spiders(spiders, schemas, extractors, schema_names,
+                                 selector)
     write_to_archive(archive, dir_name, spider_data)
     archive.finalize()
     archive.close()

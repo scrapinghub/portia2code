@@ -77,11 +77,17 @@ class BaseProcessor(object):
                                             fillvalue=_SENTINEL)))
         next(joined)  # Skip self
         values = []
+        skipped = False
         for attribute, default in joined:
             value = getattr(self, attribute)
             if value == default:
+                skipped = True
                 continue
-            values.append(repr(value))
+            if skipped:
+                values.append('{}={}'.format(attribute, repr(value)))
+            else:
+                values.append(repr(value))
+
         return ', '.join(values)
 
     def __eq__(self, other):
@@ -92,21 +98,24 @@ class BaseProcessor(object):
 
 
 class Field(BaseProcessor):
-    def __init__(self, name, selector, processors=None, required=False):
+    def __init__(self, name, selector, processors=None, required=False,
+                 type='css'):
         if processors is None:
             processors = []
         self.name = name
         self.selector = selector
         self.processors = processors
         self.required = required
+        self.type = type
 
 
 class Item(BaseProcessor):
-    def __init__(self, item, name, selector, fields):
+    def __init__(self, item, name, selector, fields, type='css'):
         self.item = item
         self.name = name
         self.selector = selector
         self.fields = fields
+        self.type = type
 
 
 class Identity(BaseProcessor, _Identity):
