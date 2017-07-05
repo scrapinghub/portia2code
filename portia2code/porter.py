@@ -268,8 +268,8 @@ def port_project(dir_name, schemas, spiders, extractors, selector='css'):
 
     # Load schema objects from module
     schema_names = {}
-    for _id, name in schema_names.items():
-        schema_names[_id] = items['%sItem' % name]
+    for _id, name in schemas.items():
+        schema_names[_id] = items['%sItem' % name.get('name', _id)]
     schema_names['_PortiaItem'] = items['PortiaItem']
 
     spider_data = create_spiders(spiders, schemas, extractors, schema_names,
