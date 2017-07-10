@@ -174,7 +174,7 @@ class Date(Text):
             try:
                 date = DateDataParser().get_date_data(text)['date_obj']
                 dates.append(date.strftime(self.format))
-            except ValueError:
+            except (ValueError, AttributeError):
                 pass
         return dates
 

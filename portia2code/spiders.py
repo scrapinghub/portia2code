@@ -25,6 +25,7 @@ class PortiaItemLoader(ItemLoader):
 
 
 class BasePortiaSpider(CrawlSpider):
+    loader = PortiaItemLoader
     items = []
 
     def start_requests(self):
@@ -54,12 +55,13 @@ class BasePortiaSpider(CrawlSpider):
                     yield item
                 break
 
-    def load_item(self, definition, response):
-        query = response.xpath if definition.type == 'xpath' else response.css
+    def load_item(self, definition, response=None, selector=None):
+        selector = response if selector is None else selector
+        query = selector.xpath if definition.type == 'xpath' else selector.css
         selectors = query(definition.selector)
         for selector in selectors:
             selector = selector if selector else None
-            ld = PortiaItemLoader(
+            ld = self.loader(
                 item=definition.item(),
                 selector=selector,
                 response=response,
@@ -69,7 +71,7 @@ class BasePortiaSpider(CrawlSpider):
                 if hasattr(field, 'fields'):
                     if field.name is not None:
                         ld.add_value(field.name,
-                                     self.load_item(field, selector))
+                                     self.load_item(field, response, selector))
                 elif field.type == 'xpath':
                     ld.add_xpath(field.name, field.selector, *field.processors,
                                  required=field.required)
