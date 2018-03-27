@@ -13,7 +13,7 @@ from os.path import join
 import portia2code.spiders
 import scrapy
 
-from six import BytesIO, PY2
+from six import BytesIO
 
 from autopep8 import fix_code
 from scrapy.settings import Settings
@@ -21,7 +21,7 @@ from scrapy.utils.template import string_camelcase
 from slybot.utils import SpiderLoader
 from slybot.spider import IblSpider
 from slybot.starturls import fragment_generator, feed_generator
-from slybot.utils import encode
+from slybot.utils import decode
 from w3lib.util import to_unicode, to_bytes
 
 from .samples import ItemBuilder
@@ -104,7 +104,7 @@ def find_files(project_name):
             if filename.endswith(('.pyc', '.pyo')):
                 continue
             path = join(base, filename)
-            with open(path) as f:
+            with open(path, 'rb') as f:
                 out_path = join(basepath, filename)
                 read_files[out_path] = f.read()
     return read_files
@@ -112,12 +112,10 @@ def find_files(project_name):
 
 def start_scrapy_project(project_name):
     """Bootstrap a portia project with default scrapy files."""
-    if PY2:
-        project_name = encode(project_name)
     files = find_files(project_name)
     out_files = {}
     for path, contents in files.items():
-        contents = string.Template(contents).substitute(
+        contents = string.Template(decode(contents)).substitute(
             project_name=project_name,
             ProjectName=string_camelcase(project_name)
         )
