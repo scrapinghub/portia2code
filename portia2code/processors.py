@@ -12,8 +12,8 @@ except ImportError:
     from itertools import zip_longest as izip_longest
 
 from dateparser.date import DateDataParser
-from scrapy.loader.processors import Identity as _Identity
-from scrapy.utils.markup import unquote_markup
+from itemloaders.processors import Identity as _Identity
+from w3lib.html import unquote_markup
 from w3lib.html import remove_tags
 from .parser import SafeHtmlParser
 
